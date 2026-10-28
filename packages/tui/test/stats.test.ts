@@ -21,13 +21,8 @@ const stats: SessionStatsInfo = {
 }
 
 describe("stats poster", () => {
-  test("includes all token categories and replaces subagents with tokens", () => {
-    expect(statsMetrics(stats)).toEqual([
-      { label: "tokens", value: 15 },
-      { label: "best streak", value: 2 },
-      { label: "active days", value: 2 },
-      { label: "sessions", value: 12 },
-    ])
+  test("separates input including cache from output and reasoning", () => {
+    expect(statsMetrics(stats).tokens.map((metric) => metric.value)).toEqual([10, 2])
     expect([0, 685, 5284, 9_200_000_000].map(statsNumber)).toEqual(["0", "685", "5.3K", "9.2B"])
   })
 })

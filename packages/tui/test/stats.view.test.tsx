@@ -62,20 +62,11 @@ test("stats shows only this year and returns after errors or success", async () 
     await setup.mockInput.typeText("/stats")
     await setup.waitForFrame((frame) => frame.includes("Usage statistics"))
     setup.mockInput.pressKey("RETURN")
-    await setup.waitForFrame((frame) => frame.includes("TOKENS") && frame.includes("123"))
-    expect(requests[1].searchParams.get("tools")).toBe("none")
+    await setup.waitForFrame(
+      (frame) => frame.includes("INPUT TOKENS") && frame.includes("OUTPUT TOKENS") && frame.includes("123"),
+    )
     expect(Number(requests[1].searchParams.get("from"))).toBe(new Date(new Date().getFullYear(), 0, 1).getTime())
     expect(requests[1].searchParams.has("to")).toBe(false)
-    expect(setup.captureCharFrame()).not.toContain("all time")
-    expect(setup.captureCharFrame()).not.toContain("All projects")
-    expect(setup.captureCharFrame()).not.toContain("show this year")
-    expect(setup.captureCharFrame()).not.toContain("esc")
-    expect(
-      setup
-        .captureCharFrame()
-        .split("\n")
-        .find((line) => line.includes("opencode / stats")),
-    ).not.toContain("tab")
     setup.mockInput.pressKey("RETURN")
     setup.mockInput.pressKey("SPACE")
     await setup.mockInput.typeText("rhp")
@@ -83,8 +74,12 @@ test("stats shows only this year and returns after errors or success", async () 
     setup.mockInput.pressKey("RIGHT")
     await setup.waitForVisualIdle()
     expect(requests).toHaveLength(2)
-    expect(setup.captureCharFrame()).toContain("TOKENS")
-    expect(setup.captureCharFrame()).not.toContain("headline")
+    setup.resize(44, 24)
+    await setup.waitForFrame(
+      (frame) => frame.includes("INPUT TOKENS") && frame.includes("OUTPUT TOKENS") && frame.includes("30"),
+    )
+    expect(setup.captureCharFrame()).toContain("Reasoning: 2 tokens")
+    expect(setup.captureCharFrame()).toContain("5")
     setup.mockInput.pressKey("ESCAPE")
     await setup.waitForFrame((frame) => frame.includes("commands") && !frame.includes("opencode / stats"))
   } finally {

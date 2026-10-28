@@ -1,16 +1,20 @@
 import type { SessionStatsInfo } from "@opencode/client"
-import { TokenUsage } from "@opencode/schema/token-usage"
 
 export function statsMetrics(stats: SessionStatsInfo) {
-  return [
-    {
-      label: "tokens",
-      value: TokenUsage.total(stats.tokens),
-    },
-    { label: "best streak", value: stats.streak },
-    { label: "active days", value: stats.activeDays },
-    { label: "sessions", value: stats.sessions },
-  ]
+  return {
+    tokens: [
+      {
+        label: "INPUT TOKENS",
+        value: stats.tokens.input + stats.tokens.cache.read + stats.tokens.cache.write,
+      },
+      { label: "OUTPUT TOKENS", value: stats.tokens.output },
+    ],
+    activity: [
+      { label: "best streak", value: stats.streak },
+      { label: "active days", value: stats.activeDays },
+      { label: "sessions", value: stats.sessions },
+    ],
+  }
 }
 
 export function statsNumber(value: number) {

@@ -32,17 +32,15 @@ export function StatsPoster(props: { stats: SessionStatsInfo }) {
   const theme = useTheme()
   const width = () => Math.max(12, Math.min(110, dimensions().width - 8))
   const compact = () => dimensions().height < 38
+  const short = () => dimensions().height < 30
+  const tokenWidth = () => Math.floor((width() - 2) / 2)
   const metrics = createMemo(() => statsMetrics(props.stats))
-  const number = () => statsNumber(metrics()[0].value)
   const dates = createMemo(() =>
     new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric" }).formatRange(
       new Date(props.stats.range.from),
       new Date(Math.max(props.stats.range.from, props.stats.range.to - 1)),
     ),
   )
-  const letters = createMemo(() => Array.from(number()).map((char) => digits[char]))
-  const large = () =>
-    letters().every(Boolean) && letters().reduce((sum, char) => sum + char[0].length * 2 + 2, -2) <= width()
   const calendar = createMemo(() =>
     activityCalendar({
       activity: props.stats.activity,
@@ -59,7 +57,7 @@ export function StatsPoster(props: { stats: SessionStatsInfo }) {
   ])
 
   return (
-    <box width={width()} flexDirection="column" alignItems="center" flexShrink={0} gap={compact() ? 1 : 2}>
+    <box width={width()} flexDirection="column" alignItems="center" flexShrink={0} gap={short() ? 0 : compact() ? 1 : 2}>
       <box width="100%" flexDirection={width() < 44 ? "column" : "row"} justifyContent="space-between">
         <text fg={theme.text.base} attributes={TextAttributes.BOLD}>
           opencode / stats
@@ -69,28 +67,54 @@ export function StatsPoster(props: { stats: SessionStatsInfo }) {
       <Show when={!compact()}>
         <Logo />
       </Show>
-      <box alignItems="center" gap={1}>
-        <Show
-          when={large()}
-          fallback={
-            <text fg={theme.text.base} attributes={TextAttributes.BOLD}>
-              {number()}
-            </text>
-          }
-        >
-          <box>
-            <For each={[0, 1, 2, 3, 4]}>
-              {(row) => (
-                <text fg={theme.text.base} selectable={false}>
-                  {letters()
-                    .map((char) => char[row].replaceAll("1", "\u2588\u2588").replaceAll("0", "  "))
-                    .join("  ")}
-                </text>
-              )}
-            </For>
-          </box>
-        </Show>
-        <text fg={theme.text.muted}>TOKENS</text>
+      <box width="100%" alignItems="center" gap={short() ? 0 : 1}>
+        <box width="100%" flexDirection="row" justifyContent="space-between">
+          <For each={metrics().tokens}>
+            {(metric) => {
+              const number = () => statsNumber(metric.value)
+              const letters = createMemo(() => Array.from(number()).map((char) => digits[char]))
+              const scale = () =>
+                letters().reduce((sum, char) => sum + char[0].length * 2 + 2, -2) <= tokenWidth() ? 2 : 1
+              const large = () =>
+                !short() &&
+                letters().every(Boolean) &&
+                letters().reduce((sum, char) => sum + char[0].length * scale() + scale(), -scale()) <= tokenWidth()
+              return (
+                <box width={tokenWidth()} alignItems="center" gap={short() ? 0 : 1}>
+                  <Show
+                    when={large()}
+                    fallback={
+                      <text fg={theme.text.base} attributes={TextAttributes.BOLD}>
+                        {number()}
+                      </text>
+                    }
+                  >
+                    <box>
+                      <For each={[0, 1, 2, 3, 4]}>
+                        {(row) => (
+                          <text fg={theme.text.base} selectable={false}>
+                            {letters()
+                              .map((char) =>
+                                char[row].replaceAll("1", "\u2588".repeat(scale())).replaceAll("0", " ".repeat(scale())),
+                              )
+                              .join(" ".repeat(scale()))}
+                          </text>
+                        )}
+                      </For>
+                    </box>
+                  </Show>
+                  <text fg={theme.text.muted}>{metric.label}</text>
+                </box>
+              )
+            }}
+          </For>
+        </box>
+        <box alignItems="center">
+          <text fg={theme.text.muted}>Input includes cache read/write.</text>
+          <text fg={theme.text.muted}>
+            Reasoning: {statsNumber(props.stats.tokens.reasoning)} tokens (separate)
+          </text>
+        </box>
       </box>
       <box alignItems="center">
         <text fg={theme.text.muted}>
@@ -118,7 +142,7 @@ export function StatsPoster(props: { stats: SessionStatsInfo }) {
         </Show>
       </box>
       <box width="100%" flexDirection="row" justifyContent="space-around">
-        <For each={metrics().slice(1)}>
+        <For each={metrics().activity}>
           {(metric) => (
             <box alignItems="center">
               <text fg={theme.text.base} attributes={TextAttributes.BOLD}>
