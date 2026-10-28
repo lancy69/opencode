@@ -584,7 +584,13 @@ export function Autocomplete(props: {
   function move(direction: -1 | 1) {
     if (!store.visible) return
     if (!options().length) return
-    moveTo(moveSelection(store.selected, { count: options().length, delta: direction, policy: "wrap" }))
+    moveTo(
+      moveSelection(store.selected, {
+        count: options().length,
+        delta: direction,
+        policy: config.dialog?.wrap === false ? "clamp" : "wrap",
+      }),
+    )
   }
 
   function moveTo(next: number) {

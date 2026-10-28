@@ -86,6 +86,13 @@ export const Info = Schema.Struct({
       }),
     }),
   ).annotate({ description: "Leader key behavior" }),
+  dialog: Schema.optional(
+    Schema.Struct({
+      wrap: Schema.optional(Schema.Boolean).annotate({
+        description: "Wrap dialog and autocomplete list navigation at the first and last item; defaults to true",
+      }),
+    }),
+  ).annotate({ description: "Dialog and autocomplete navigation behavior" }),
   scroll: Schema.optional(
     Schema.Struct({
       speed: Schema.optional(Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0.001))).annotate({

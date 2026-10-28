@@ -95,10 +95,11 @@ async function mountSelect<T>(
     DialogSelectProps<T>,
     "flat" | "ref" | "onFilter" | "renderFilter" | "onCancel" | "focusTarget" | "search"
   >,
+  wrap?: boolean,
 ) {
   const state = path.join(root, "state")
   await mkdir(state, { recursive: true })
-  const config = createTuiResolvedConfig()
+  const config = createTuiResolvedConfig({ dialog: { wrap } })
   const [
     { ConfigProvider },
     { ThemeProvider },
@@ -168,6 +169,53 @@ async function mountSelect<T>(
     await app.waitFor(() => app.renderer.currentFocusedEditor instanceof InputRenderable)
   return { app, moved, replaceOptions, replaceCurrent, selected }
 }
+
+test.each([undefined, true, false])("list boundaries respect dialog.wrap=%s", async (wrap) => {
+  await using tmp = await tmpdir()
+  const options = [
+    { title: "Alpha", value: "alpha" },
+    { title: "Beta", value: "beta" },
+    { title: "Gamma", value: "gamma" },
+  ]
+  const select = await mountSelect(tmp.path, options, undefined, undefined, undefined, wrap)
+  select.moved.length = 0
+  try {
+    await select.app.mockInput.pressArrow("up")
+    await select.app.renderOnce()
+    expect(select.moved.at(-1)).toBe(wrap === false ? "alpha" : "gamma")
+    await select.app.mockInput.pressKey("END")
+    await select.app.renderOnce()
+    for (let i = 0; i < 6; i++) {
+      await select.app.mockInput.pressArrow("down")
+      await select.app.waitFor(() => select.moved.length >= i + 3)
+    }
+    await select.app.renderOnce()
+    expect(select.moved.slice(-6)).toEqual(
+      wrap === false ? Array(6).fill("gamma") : ["alpha", "beta", "gamma", "alpha", "beta", "gamma"],
+    )
+    await select.app.mockInput.pressKey("HOME")
+    await select.app.mockInput.pressKeys(["\u001b[5~"])
+    await select.app.renderOnce()
+    expect(select.moved.at(-1)).toBe(wrap === false ? "alpha" : "gamma")
+    select.replaceOptions([{ title: "Only", value: "only" }])
+    await select.app.waitForFrame((frame) => frame.includes("Only"))
+    await select.app.mockInput.pressArrow("up")
+    await select.app.mockInput.pressArrow("down")
+    await select.app.renderOnce()
+    select.replaceOptions([])
+    await select.app.waitForFrame((frame) => !frame.includes("Only"))
+    await select.app.mockInput.pressKey("END")
+    await select.app.mockInput.pressArrow("down")
+    select.replaceOptions(options)
+    await select.app.waitForFrame((frame) => frame.includes("Alpha"))
+    await select.app.mockInput.pressKey("HOME")
+    await select.app.mockInput.pressEnter()
+    await select.app.waitFor(() => select.selected.length === 1)
+    expect(select.selected).toEqual(["alpha"])
+  } finally {
+    select.app.renderer.destroy()
+  }
+})
 
 test.each([true, false])("filter refs are ready when published with renderFilter=%s", async (renderFilter) => {
   await using tmp = await tmpdir()

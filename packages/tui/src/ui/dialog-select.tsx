@@ -405,7 +405,14 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
   function move(direction: number) {
     if (props.locked) return
     if (flat().length === 0) return
-    moveTo(moveSelection(store.selected, { count: flat().length, delta: direction, policy: "wrap" }), true)
+    moveTo(
+      moveSelection(store.selected, {
+        count: flat().length,
+        delta: direction,
+        policy: config.dialog?.wrap === false ? "clamp" : "wrap",
+      }),
+      true,
+    )
   }
 
   function moveSection(direction: 1 | -1) {
@@ -413,7 +420,13 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
     const sections = grouped().filter(([_, options]) => options.length > 0)
     if (sections.length === 0) return
     const current = sections.findIndex(([category]) => category === selected()?.category)
-    const section = sections[(current + direction + sections.length) % sections.length]
+    const section = sections[
+      moveSelection(current, {
+        count: sections.length,
+        delta: direction,
+        policy: config.dialog?.wrap === false ? "clamp" : "wrap",
+      })
+    ]
     moveTo(flat().indexOf(section[1][0]), true)
   }
 
@@ -522,7 +535,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
           group: "Dialog",
           run() {
             if (props.locked) return
-            moveTo(flat().length - 1)
+            moveTo(Math.max(0, flat().length - 1))
           },
         },
         {
