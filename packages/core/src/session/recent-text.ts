@@ -1,7 +1,6 @@
 export * as SessionRecentText from "./recent-text.js"
 
 import type { SessionMessage } from "./message.js"
-import type { SessionStored } from "./stored.js"
 
 const TOOL_OUTPUT_MAX_CHARS = 1_250
 
@@ -13,7 +12,7 @@ export const kept = (message: SessionMessage.CompactionCompleted) =>
   typeof message.metadata?.recent === "string" ? message.metadata.recent : ""
 
 /** One message as the recent, verbatim part of a summary shows it. Empty for messages that part leaves out. */
-export const messageToText = (message: SessionMessage.Info | SessionStored.User): string => {
+export const messageToText = (message: SessionMessage.Info): string => {
   switch (message.type) {
     // Earlier summaries and instruction updates are handled outside the recent part.
     case "compaction":
@@ -28,7 +27,8 @@ export const messageToText = (message: SessionMessage.Info | SessionStored.User)
       const files =
         message.files?.map((file) => {
           const name = file.name ?? (file.source.type === "uri" ? file.source.uri : "inline attachment")
-          return `[Attached ${file.mime}: ${name}]`
+          const label = `[Attached ${file.mime}: ${name}]`
+          return file.mime === "text/plain" ? `${label}\n${Buffer.from(file.data, "base64").toString("utf8")}` : label
         }) ?? []
       return [...skills, `[User]: ${message.text}`, ...files].join("\n")
     }

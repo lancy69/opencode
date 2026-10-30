@@ -12,13 +12,11 @@ import { InstructionState } from "./instruction-state.js"
 import { SessionBlob } from "./blob.js"
 import { SessionRecentText } from "./recent-text.js"
 import { SessionMessageTable, SessionPartTable } from "./sql.js"
-import { SessionStored } from "./stored.js"
 
 type DatabaseService = Database.Interface["db"]
 
 const decode = Schema.decodeUnknownEffect(SessionMessage.Info)
 const decodeSync = Schema.decodeUnknownSync(SessionMessage.Info)
-const decodeStoredUser = Schema.decodeUnknownEffect(SessionStored.User)
 const decodeMedia = Schema.decodeUnknownEffect(SessionMessage.MediaInfo)
 const decodePartSync = Schema.decodeUnknownSync(SessionMessage.AssistantContent)
 export const encodePart = Schema.encodeSync(SessionMessage.AssistantContent)
@@ -143,12 +141,6 @@ const decodeError = (row: typeof SessionMessageTable.$inferSelect) => () =>
 export const decodeMessageRow = (row: typeof SessionMessageTable.$inferSelect) =>
   decode(rowInput(row)).pipe(Effect.mapError(decodeError(row)))
 
-/** Decodes a row without its blobs, so user files may stay refs. Only for readers that never use file bytes. */
-const decodeStoredRow = (
-  row: typeof SessionMessageTable.$inferSelect,
-): Effect.Effect<SessionMessage.Info | SessionStored.User, MessageDecodeError> =>
-  row.type === "user" ? decodeStoredUser(rowInput(row)).pipe(Effect.mapError(decodeError(row))) : decodeMessageRow(row)
-
 /** Decodes rows after restoring media stored in `blob`. Reads that return media must use this. */
 export const decodeMessageRows = Effect.fnUntraced(function* (
   db: DatabaseService,
@@ -258,8 +250,8 @@ const withRecentText = Effect.fnUntraced(function* (
     .orderBy(asc(SessionMessageTable.seq))
     .all()
     .pipe(Effect.orDie)
-  // The recent text names attachments by mime and name only, so their bytes are never read.
-  const kept = yield* Effect.forEach(yield* withParts(db, rows), decodeStoredRow, { concurrency: 1 })
+  // Text attachments are part of the retained transcript, including files stored as blob refs.
+  const kept = yield* decodeMessageRows(db, rows)
   const recent = kept.map(SessionRecentText.messageToText).filter(Boolean).join("\n\n")
   return [{ ...first, message: { ...compaction, metadata: { ...compaction.metadata, recent } } }, ...entries.slice(1)]
 })

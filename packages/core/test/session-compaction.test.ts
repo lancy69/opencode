@@ -17,6 +17,7 @@ import { Bus } from "@opencode/core/bus"
 import { EventTable } from "@opencode/core/event/sql"
 import { Instructions } from "@opencode/core/instructions/index"
 import { SessionCompaction } from "@opencode/core/session/compaction"
+import { SessionBlob } from "@opencode/core/session/blob"
 import type { SessionContext } from "@opencode/core/session/context"
 import { MessageDecodeError } from "@opencode/core/session/error"
 import { SessionEvent } from "@opencode/core/session/event"
@@ -828,6 +829,92 @@ it.effect(
       expect(requests[0].messages[0].content).toEqual([{ type: "text", text: messages[0].text }])
       expect(requests[0].messages[1].content).toEqual([{ type: "text", text: SessionCompaction.buildPrompt(false) }])
     }),
+)
+
+Array.of("inline", "blob").forEach((storage) => {
+  it.effect(`compaction replays retained ${storage} text attachments excluded from the summary request`, () =>
+    Effect.gen(function* () {
+      requests = []
+      const session = yield* insertSession(Session.ID.make(`ses_compaction_text_${storage}`))
+      const text = `SENTINEL-ORIGINAL-ATTACHMENT-CONTENT\n日本語 😀\n${"retain verbatim\n".repeat(150)}`
+      const image = Buffer.from("binary attachment bytes").toString("base64")
+      const latest = SessionMessage.User.make({
+        ...textUser(`latest ${"x".repeat(120_000)}`),
+        files: [
+          {
+            data: Buffer.from(text).toString("base64"),
+            mime: "text/plain",
+            name: "pasted.txt",
+            source: { type: "inline" },
+          },
+          { data: "", mime: "text/plain", source: { type: "inline" } },
+          {
+            data: Buffer.from("URI attachment contents").toString("base64"),
+            mime: "text/plain",
+            source: { type: "uri", uri: "file:///project/notes.txt" },
+          },
+          { data: image, mime: "image/png", name: "pixel.png", source: { type: "inline" } },
+        ],
+      })
+      const messages = [textUser(`older ${"x".repeat(640_000)}`), latest]
+      yield* storeMessages(session.id, messages)
+      if (storage === "blob") {
+        const db = (yield* Database.Service).db
+        const { id: _, type: __, ...data } = Schema.encodeSync(SessionMessage.Info)(latest)
+        const split = SessionBlob.split(data)
+        yield* SessionBlob.save(db, split.blobs)
+        yield* db
+          .update(SessionMessageTable)
+          .set({ data: split.data })
+          .where(eq(SessionMessageTable.id, latest.id))
+          .run()
+        yield* SessionBlob.recordRefs(db, { sessionID: session.id, messageID: latest.id, seq: 2 }, split.data)
+      }
+
+      expect(yield* compactManually(session, messages)).toEqual({ status: "completed" })
+      expect(requests).toHaveLength(1)
+      expect(JSON.stringify(requests[0].messages)).not.toContain("SENTINEL-ORIGINAL-ATTACHMENT-CONTENT")
+      const store = yield* SessionStore.Service
+      const history = yield* store.context(session.id)
+      expect(history[0]).toMatchObject({ type: "compaction", metadata: { keepID: latest.id } })
+      expect(history[0].metadata?.recent).toContain(`[Attached text/plain: pasted.txt]\n${text}`)
+      expect(history[0].metadata?.recent).toContain("[Attached text/plain: inline attachment]\n")
+      expect(history[0].metadata?.recent).toContain(
+        "[Attached text/plain: file:///project/notes.txt]\nURI attachment contents",
+      )
+      expect(history[0].metadata?.recent).toContain("[Attached image/png: pixel.png]")
+      expect(history[0].metadata?.recent).not.toContain(image)
+      const replay = toLLMMessages(history, resolved.ref)
+      expect(
+        replay.flatMap((message) => message.content).some((part) => part.type === "text" && part.text.includes(text)),
+      ).toBe(true)
+    }),
+  )
+})
+
+it.effect("retained text attachment contents count toward the compaction keep allowance", () =>
+  Effect.gen(function* () {
+    requests = []
+    const session = yield* insertSession(Session.ID.make("ses_compaction_text_budget"))
+    const attachment = `ATTACHMENT-BUDGET-SENTINEL ${"x".repeat(800)}`
+    const middle = SessionMessage.User.make({
+      ...textUser("Middle question"),
+      files: [{ data: Buffer.from(attachment).toString("base64"), mime: "text/plain", source: { type: "inline" } }],
+    })
+    const latest = textUser("Latest question")
+    const messages = [textUser("Earlier question " + "x".repeat(8_000)), middle, latest]
+    yield* storeMessages(session.id, messages)
+    const compaction = yield* SessionCompaction.Service
+    yield* compaction.transform((editor) => editor.configure({ keep: 100 }))
+
+    expect(yield* compactManually(session, messages)).toEqual({ status: "completed" })
+    const store = yield* SessionStore.Service
+    const history = yield* store.context(session.id)
+    expect(history[0]).toMatchObject({ type: "compaction", metadata: { keepID: latest.id } })
+    expect(history[0].metadata?.recent).toBe("[User]: Latest question")
+    // The attachment is summarized rather than silently retained outside the configured allowance.
+    expect(JSON.stringify(requests[0].messages)).toContain(attachment)
+  }),
 )
 
 it.effect("compaction lowers the output limit when it sends a request it could not shrink", () =>
