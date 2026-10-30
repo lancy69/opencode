@@ -127,37 +127,92 @@ const withRegionEndings = (region: string, replacement: string, fallback: string
 /**
  * For each line of `after`, the index of the `before` line it keeps (longest common subsequence) or, between kept
  * lines, the line it takes the place of; undefined for lines with no counterpart.
+ *
+ * Divide-and-conquer traceback uses O(after.length) memory and quadratic time in the worst case.
+ * A distance band avoids the unchanged rectangle around small edits without changing LCS tie-breaking.
  */
 const alignLines = (before: string[], after: string[]) => {
-  const width = after.length + 1
-  const table = new Uint32Array((before.length + 1) * width)
-  for (let i = before.length - 1; i >= 0; i--)
-    for (let j = after.length - 1; j >= 0; j--)
-      table[i * width + j] =
-        before[i] === after[j]
-          ? table[(i + 1) * width + j + 1] + 1
-          : Math.max(table[(i + 1) * width + j], table[i * width + j + 1])
   const result: (number | undefined)[] = []
-  const gap = { before: [] as number[], after: [] as number[] }
-  const flush = () => {
-    gap.after.forEach((j, k) => (result[j] = gap.before[k]))
-    gap.before = []
-    gap.after = []
+  // Reuse rows across recursive calls: never retain a matrix or a diff's path history.
+  const rows = [new Uint32Array(after.length + 1), new Uint32Array(after.length + 1)]
+  const crossings = [new Uint32Array(after.length + 1), new Uint32Array(after.length + 1)]
+  let previousBefore = 0
+  let previousAfter = 0
+  const gap = (i: number, j: number) => {
+    for (let k = previousAfter; k < j; k++)
+      result[k] = previousBefore + k - previousAfter < i ? previousBefore + k - previousAfter : undefined
   }
-  let i = 0
-  let j = 0
-  while (i < before.length && j < after.length) {
-    if (before[i] === after[j]) {
-      flush()
-      result[j++] = i++
-      continue
+  const keep = (i: number, j: number) => {
+    gap(i, j)
+    result[j] = i
+    previousBefore = i + 1
+    previousAfter = j + 1
+  }
+  const visit = (startBefore: number, endBefore: number, startAfter: number, endAfter: number): void => {
+    while (startBefore < endBefore && startAfter < endAfter && before[startBefore] === after[startAfter])
+      keep(startBefore++, startAfter++)
+    if (startBefore === endBefore || startAfter === endAfter) return
+    if (endBefore - startBefore === 1) {
+      const j = after.indexOf(before[startBefore], startAfter)
+      if (j !== -1 && j < endAfter) keep(startBefore, j)
+      return
     }
-    if (table[(i + 1) * width + j] >= table[i * width + j + 1]) gap.before.push(i++)
-    else gap.after.push(j++)
+
+    // A common suffix bounds the insert/delete distance, but must not be pinned:
+    // repeated lines can make the original deletion-first LCS choose earlier matches.
+    let suffix = 0
+    while (
+      endBefore - suffix > startBefore &&
+      endAfter - suffix > startAfter &&
+      before[endBefore - suffix - 1] === after[endAfter - suffix - 1]
+    )
+      suffix++
+    const bound = endBefore - startBefore + endAfter - startAfter - 2 * suffix
+    const infinity = bound + 1
+    const middle = (startBefore + endBefore) >>> 1
+    let next = rows[0]
+    let current = rows[1]
+    let nextCrossing = crossings[0]
+    let currentCrossing = crossings[1]
+    const bottom = Math.max(startAfter, endAfter - bound)
+    next.fill(infinity, startAfter, bottom)
+    for (let j = bottom; j <= endAfter; j++) next[j] = endAfter - j
+    for (let i = endBefore - 1; i >= startBefore; i--) {
+      // Cells outside this band already require more than `bound` edits to reach the end.
+      const low = Math.max(startAfter, endAfter - (endBefore - i) - bound)
+      const high = Math.min(endAfter, endAfter - (endBefore - i) + bound)
+      if (low > startAfter) current[low - 1] = infinity
+      if (high < endAfter) current[high + 1] = infinity
+      for (let j = high; j >= low; j--) {
+        if (j === endAfter) {
+          current[j] = endBefore - i
+          currentCrossing[j] = nextCrossing[j]
+        } else if (before[i] === after[j]) {
+          current[j] = next[j + 1]
+          currentCrossing[j] = nextCrossing[j + 1]
+        } else if (next[j] <= current[j + 1]) {
+          current[j] = Math.min(infinity, next[j] + 1)
+          currentCrossing[j] = nextCrossing[j]
+        } else {
+          current[j] = Math.min(infinity, current[j + 1] + 1)
+          currentCrossing[j] = currentCrossing[j + 1]
+        }
+        // Propagate the exact greedy traceback's crossing, not an arbitrary optimal split.
+        if (i === middle) currentCrossing[j] = j
+      }
+      const row = next
+      next = current
+      current = row
+      const crossing = nextCrossing
+      nextCrossing = currentCrossing
+      currentCrossing = crossing
+    }
+    const split = nextCrossing[startAfter]
+    visit(startBefore, middle, startAfter, split)
+    visit(middle, endBefore, split, endAfter)
   }
-  while (i < before.length) gap.before.push(i++)
-  while (j < after.length) gap.after.push(j++)
-  flush()
+  visit(0, before.length, 0, after.length)
+  gap(before.length, after.length)
   return result
 }
 

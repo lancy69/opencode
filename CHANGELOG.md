@@ -19,6 +19,7 @@ Release notes for OpenCode V2, newest first.
 
 #### Bug fixes
 
+- Kept large edit replacements from allocating quadratic memory while preserving mixed line endings. ([#60305](https://github.com/anomalyco/opencode/issues/60305))
 - Rejected persistent terminal requests whose working directory no longer exists.
 - Preserved media when sessions are forked or imported.
 - Associated image-generation notices with the correct background job.

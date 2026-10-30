@@ -669,6 +669,72 @@ describe("EditTool", () => {
     }),
   )
 
+  it.live("keeps repeated-line ties and positional gaps in mixed-ending replacements", () =>
+    withTempDir((tmp) =>
+      withTool(tmp.path, makeEditFixture(), (registry) =>
+        Effect.gen(function* () {
+          const cases = [
+            // Pinning the equal suffix would move the last source `a` to the wrong output line.
+            { before: "a\r\nb\na\r\nend\n", after: "b\na\na\nend\n", expected: "b\na\r\na\nend\n" },
+            // Equal lines match immediately, even when a later repetition has another ending.
+            { before: "a\r\na\nb\r\nend\n", after: "a\nb\na\nend\n", expected: "a\r\nb\r\na\nend\n" },
+            {
+              before: "left\r\nold1\nold2\r\nold3\nright\r\n",
+              after: "left\nnew1\nnew2\nright\n",
+              expected: "left\r\nnew1\nnew2\r\nright\r\n",
+            },
+            {
+              before: "left\r\nold\nright\r\n",
+              after: "left\nnew1\nnew2\nnew3\nright\n",
+              expected: "left\r\nnew1\nnew2\r\nnew3\r\nright\r\n",
+            },
+          ]
+          for (const [index, item] of cases.entries()) {
+            const file = `mixed-${index}.txt`
+            yield* Effect.promise(() => fs.writeFile(path.join(tmp.path, file), item.before))
+            const settled = yield* executeTool(
+              registry,
+              call({ path: file, oldString: item.before.replaceAll("\r\n", "\n"), newString: item.after }),
+            )
+            expect(settled.status).toBe("completed")
+            expect(yield* Effect.promise(() => fs.readFile(path.join(tmp.path, file), "utf8"))).toBe(item.expected)
+          }
+        }),
+      ),
+    ),
+  )
+
+  it.live("preserves mixed endings through large replacement regions with small edits", () =>
+    withTempDir((tmp) =>
+      withTool(tmp.path, makeEditFixture(), (registry) =>
+        Effect.gen(function* () {
+          const before = "first\r\n" + "old\nold\r\n".repeat(12_000) + "last\n"
+          const cases = [
+            { file: "first.txt", after: before.replace("first", "changed") },
+            {
+              file: "middle.txt",
+              after:
+                "first\r\n" + "old\nold\r\n".repeat(6_000) + "changed\nold\r\n" + "old\nold\r\n".repeat(5_999) + "last\n",
+            },
+          ]
+          for (const item of cases) {
+            yield* Effect.promise(() => fs.writeFile(path.join(tmp.path, item.file), before))
+            const settled = yield* executeTool(
+              registry,
+              call({
+                path: item.file,
+                oldString: before.replaceAll("\r\n", "\n"),
+                newString: item.after.replaceAll("\r\n", "\n"),
+              }),
+            )
+            expect(settled.status).toBe("completed")
+            expect(yield* Effect.promise(() => fs.readFile(path.join(tmp.path, item.file), "utf8"))).toBe(item.after)
+          }
+        }),
+      ),
+    ),
+  )
+
   it.live("applies edits that differ only in \\r to the exact bytes", () =>
     withTempDir((tmp) => {
       const edit = makeEditFixture()
