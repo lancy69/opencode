@@ -2,6 +2,14 @@
 
 Release notes for OpenCode V2, newest first.
 
+## Unreleased
+
+### Core
+
+#### Bug fixes
+
+- Honored literal `null` and `undefined` directory names in glob searches instead of searching the workspace root.
+
 ## v2.2.2 — 2026-10-29
 
 ### Highlights

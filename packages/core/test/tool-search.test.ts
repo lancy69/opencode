@@ -67,6 +67,56 @@ const call = (name: "glob" | "grep", input: unknown) => ({
 })
 
 describe("search tools", () => {
+  it.live("glob scopes literal null and undefined directories and defaults only an omitted path", () =>
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirScoped()
+      const files = ["null/inside.txt", "undefined/inside.txt", "ordinary/inside.txt", "outside.txt"]
+      yield* Effect.promise(() => Promise.all(files.map((file) => Bun.write(path.join(tmp.path, file), "needle\n"))))
+      const assertions: Permission.AssertInput[] = []
+      yield* withTools(
+        tmp.path,
+        (registry) =>
+          Effect.gen(function* () {
+            for (const directory of ["null", "undefined", "ordinary", undefined]) {
+              const result = yield* executeTool(
+                registry,
+                call("glob", { pattern: "*.txt", ...(directory === undefined ? {} : { path: directory }) }),
+              )
+              const expected = directory === undefined ? files : [`${directory}/inside.txt`]
+              expect(result.status).toBe("completed")
+              expect(result.output).toHaveLength(expected.length)
+              expect(result.output).toEqual(
+                expect.arrayContaining(expected.map((file) => ({ path: path.normalize(file), type: "file" }))),
+              )
+              expect(result.content?.[0]?.type === "text" ? result.content[0].text.split("\n").sort() : []).toEqual(
+                expected.map((file) => path.join(tmp.path, file)).sort(),
+              )
+              expect(assertions.at(-1)?.metadata).toEqual({
+                root: directory ?? ".",
+                path: directory,
+                hidden: undefined,
+                limit: undefined,
+              })
+            }
+            yield* Effect.promise(() =>
+              Promise.all(
+                ["null", "undefined", "ordinary"].map((directory) =>
+                  fs.rm(path.join(tmp.path, directory), { recursive: true }),
+                ),
+              ),
+            )
+            for (const directory of ["null", "undefined", "ordinary"]) {
+              expect(yield* executeTool(registry, call("glob", { pattern: "*.txt", path: directory }))).toEqual({
+                status: "error",
+                error: { type: "tool.execution", message: `Search path does not exist: ${directory}` },
+              })
+            }
+          }),
+        assertions,
+      )
+    }),
+  )
+
   for (const hidden of [undefined, false, true]) {
     for (const limit of hidden ? [10] : [1, 10]) {
       it.live(`glob honors hidden=${hidden} before limit=${limit}`, () =>
