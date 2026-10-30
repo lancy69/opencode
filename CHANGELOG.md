@@ -19,6 +19,7 @@ Release notes for OpenCode V2, newest first.
 
 #### Bug fixes
 
+- Preserved provider errors and their raw response bodies when proxies return a nonstandard HTTP status.
 - Rejected persistent terminal requests whose working directory no longer exists.
 - Preserved media when sessions are forked or imported.
 - Associated image-generation notices with the correct background job.
@@ -642,15 +643,15 @@ Version 2.1 makes intentional changes to public SDK, HTTP message/event, and plu
 
 Provider-owned replay data previously used different names on different surfaces. Read and write `native` instead; a tool's execution `state` and UI `metadata` are separate and are not renamed.
 
-| Surface | Before | After |
-| --- | --- | --- |
-| Text and reasoning parts | `state` | `native` |
-| Assistant and compaction messages | `providerState` | `native` |
-| Text/reasoning lifecycle events and `session.tool.called` | `state` | `native` |
-| `session.step.ended`, `session.step.failed`, and `session.compaction.ended` | `providerState` | `native` |
-| `session.tool.success` and `session.tool.failed` | `resultState` | `native` |
-| Exported replay-data schema | `SessionMessage.ProviderState` | `SessionMessage.Native` |
-| Plugin compaction hook result | `SessionCompactionResult.providerState` | `SessionCompactionResult.native` |
+| Surface                                                                     | Before                                  | After                            |
+| --------------------------------------------------------------------------- | --------------------------------------- | -------------------------------- |
+| Text and reasoning parts                                                    | `state`                                 | `native`                         |
+| Assistant and compaction messages                                           | `providerState`                         | `native`                         |
+| Text/reasoning lifecycle events and `session.tool.called`                   | `state`                                 | `native`                         |
+| `session.step.ended`, `session.step.failed`, and `session.compaction.ended` | `providerState`                         | `native`                         |
+| `session.tool.success` and `session.tool.failed`                            | `resultState`                           | `native`                         |
+| Exported replay-data schema                                                 | `SessionMessage.ProviderState`          | `SessionMessage.Native`          |
+| Plugin compaction hook result                                               | `SessionCompactionResult.providerState` | `SessionCompactionResult.native` |
 
 #### Tool call and result data share `tool.native`
 

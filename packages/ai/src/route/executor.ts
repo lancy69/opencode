@@ -103,6 +103,8 @@ const statusError = (response: HttpClientResponse.HttpClientResponse) =>
     })
   })
 
+const isHttpStatus = Schema.is(HttpContext.fields.status)
+
 /** Preserve HTTP diagnostics for executor and externally captured failures alike. */
 export const httpFailure = (input: {
   readonly message: string
@@ -116,9 +118,11 @@ export const httpFailure = (input: {
   const headers = normalizedHeaders(Headers.fromInput(input.responseHeaders))
   const retryAfter = retryAfterMs(headers)
   const rateLimit = rateLimitDetails(headers, retryAfter)
+  // External SDKs and proxies can report statuses that cannot form a canonical HTTP context.
+  const validStatus = input.status === undefined || isHttpStatus(input.status)
   return new AIError({
     reason: classifyProviderFailure({
-      message: input.message,
+      message: validStatus ? input.message : `${input.message} (HTTP ${input.status})`,
       status: input.status,
       data: input.data,
       rawBody: input.responseBody,
@@ -126,7 +130,7 @@ export const httpFailure = (input: {
       rateLimit,
       cause: input.cause,
       http:
-        input.status === undefined || input.url === undefined
+        !validStatus || input.status === undefined || input.url === undefined
           ? undefined
           : new HttpContext({ url: input.url, status: input.status, headers }),
     }),

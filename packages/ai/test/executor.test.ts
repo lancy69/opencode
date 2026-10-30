@@ -75,6 +75,91 @@ describe("RequestExecutor", () => {
     }),
   )
 
+  it.effect("preserves valid HTTP status boundaries and classification", () =>
+    Effect.sync(() => {
+      for (const [status, tag] of [
+        [100, "UnknownProvider"],
+        [401, "Authentication"],
+        [429, "RateLimit"],
+        [599, "ProviderInternal"],
+      ] as const) {
+        const error = RequestExecutor.httpFailure({
+          message: "provider rejected request",
+          url: request.url,
+          status,
+          responseHeaders: { "X-Request-ID": "req_status" },
+        })
+        expect(error.message).toBe("provider rejected request")
+        expect(error.reason._tag).toBe(tag)
+        expect(error.reason.http).toMatchObject({
+          url: request.url,
+          status,
+          headers: { "x-request-id": "req_status" },
+        })
+      }
+    }),
+  )
+
+  it.effect("keeps unusual external statuses diagnostic without constructing invalid HTTP context", () =>
+    Effect.sync(() => {
+      const body = '{"error":{"message":"proxy said no"}}'
+      const cause = new Error("proxy failure")
+      for (const status of [0, 99, 600, 999, 499.5, NaN, Infinity, -Infinity]) {
+        const error = expectAIError(
+          RequestExecutor.httpFailure({
+            message: "proxy said no",
+            url: request.url,
+            status,
+            responseBody: body,
+            cause,
+          }),
+        )
+        expect(error.message).toBe(`proxy said no (HTTP ${status})`)
+        expect(error.reason.body).toBe(body)
+        expect(error.reason.cause).toBe(cause)
+        expect(error.reason.http).toBeUndefined()
+      }
+      expect(RequestExecutor.httpFailure({ message: "proxy said no", status: 999 }).reason._tag).toBe(
+        "ProviderInternal",
+      )
+      expect(RequestExecutor.httpFailure({ message: "proxy said no", status: 0 }).reason._tag).toBe("UnknownProvider")
+    }),
+  )
+
+  it.live("surfaces a nonstandard proxy HTTP response as a provider error", () =>
+    Effect.gen(function* () {
+      const body = '{"error":{"message":"proxy said no"}}'
+      const server = yield* Effect.acquireRelease(
+        Effect.sync(() =>
+          Bun.listen({
+            hostname: "127.0.0.1",
+            port: 0,
+            socket: {
+              data(socket) {
+                socket.end(
+                  `HTTP/1.1 999 Weird\r\ncontent-type: application/json\r\ncontent-length: ${body.length}\r\nconnection: close\r\n\r\n${body}`,
+                )
+              },
+            },
+          }),
+        ),
+        (server) => Effect.sync(() => server.stop(true)),
+      )
+      const error = yield* Effect.gen(function* () {
+        const executor = yield* RequestExecutor.Service
+        return yield* executor
+          .execute(HttpClientRequest.get(`http://127.0.0.1:${server.port}/v1/chat/completions`))
+          .pipe(Effect.flip)
+      }).pipe(Effect.provide(RequestExecutor.fetchLayer))
+      expectAIError(error)
+      expect(error.message).toBe("proxy said no (HTTP 999)")
+      expect(error.reason._tag).toBe("ProviderInternal")
+      expect(error.reason.body).toBe(body)
+      expect(error.reason.http).toBeUndefined()
+      expect(isRetryable(error)).toBeTrue()
+    }),
+  )
+
   it.effect("classifies AWS modeled errors from every restJson1 identity location", () =>
     Effect.sync(() => {
       const cases = [
