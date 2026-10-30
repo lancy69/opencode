@@ -202,12 +202,15 @@ export function DirectoryPickerDialog(props: DirectoryPickerDialogProps) {
   const currentSuggestions = createMemo(() =>
     currentPickerSuggestions(suggestions.latest, state.input, suggestions.loading),
   )
+
   const resolvedResult = createMemo(() => policy.result(state.root, state.selected, state.rootValid))
+
   const fullSelectionPath = createMemo(() => {
     const value = resolvedResult()
 
     return value ? displayPickerPath(value, "", home()) : ""
   })
+
   const shortSelectionPath = createMemo(() => {
     const value = resolvedResult()
 
@@ -294,6 +297,7 @@ export function DirectoryPickerDialog(props: DirectoryPickerDialogProps) {
     for (const selectedPath of tree?.getSelectedPaths() ?? []) {
       if (selectedPath !== entry) tree?.getItem(selectedPath)?.deselect()
     }
+
     tree?.getItem(entry)?.select()
     tree?.focusPath(entry)
     // The tree measures newly expanded rows after this frame, so an immediate scroll clamps to the old height.
@@ -301,9 +305,7 @@ export function DirectoryPickerDialog(props: DirectoryPickerDialogProps) {
   }
 
   async function navigate(path: string, options?: { selectChild?: string; input?: string }) {
-    const value = policy.navigation(
-      pickerAbsoluteInput(cleanPickerInput(path), home(), state.root || start() || home()),
-    )
+    const value = policy.navigation(pickerAbsoluteInput(path, home(), state.root || start() || home()))
 
     if (!value) return
     const token = ++navigation
@@ -340,9 +342,7 @@ export function DirectoryPickerDialog(props: DirectoryPickerDialogProps) {
   }
 
   async function selectDirectory(path: string, options?: { fromInput?: boolean }) {
-    const value = policy.navigation(
-      pickerAbsoluteInput(cleanPickerInput(path), home(), state.root || start() || home()),
-    )
+    const value = policy.navigation(pickerAbsoluteInput(path, home(), state.root || start() || home()))
 
     if (!value) return
     const nextInput = options?.fromInput ? displayInputDirectory(value) : state.input
@@ -352,6 +352,7 @@ export function DirectoryPickerDialog(props: DirectoryPickerDialogProps) {
       for (const selectedPath of tree?.getSelectedPaths() ?? []) {
         tree?.getItem(selectedPath)?.deselect()
       }
+
       tree?.focusNearestPath(null)
       setState({
         selected: "",
@@ -451,6 +452,7 @@ export function DirectoryPickerDialog(props: DirectoryPickerDialogProps) {
 
   function activeSuggestionIndex() {
     if (!state.suggestionsOpen) return -1
+
     if (state.activeSuggestion >= 0) return state.activeSuggestion
     const raw = cleanPickerInput(state.input)
 
@@ -477,7 +479,11 @@ export function DirectoryPickerDialog(props: DirectoryPickerDialogProps) {
           return
         }
 
-        if (state.input.trim()) void selectDirectory(state.input, { fromInput: true })
+        const input = cleanPickerInput(state.input)
+
+        if (input) {
+          void selectDirectory(pickerAbsoluteInput(input, home(), state.root || start() || home()), { fromInput: true })
+        }
       },
     ],
     ["Tab", complete],

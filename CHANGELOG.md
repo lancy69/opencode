@@ -46,6 +46,7 @@ Release notes for OpenCode V2, newest first.
 
 #### Bug fixes
 
+- Preserved trailing spaces in directory names selected from picker suggestions and recent projects.
 - Stopped queued prompts from dropping frames as their content grows.
 - Counted queued quotes and browser annotations as attachments.
 - Reported failures to persist composer attachments through the normal error UI.
